@@ -1,15 +1,16 @@
 import numpy as np
 import tensorflow as tf
-from flask import Flask, request, jsonify, render_template
 import joblib  # For loading preprocessing objects
+from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
 
 # Load the trained deep learning model
 model = tf.keras.models.load_model('descripp.h5')
 
-# Load any necessary preprocessing steps (if applicable)
-# Example: label_encoders = joblib.load("label_encoders.pkl")
+# Load preprocessing objects (scaler & label encoder)
+scaler_Y = joblib.load("scaler_Y.pkl")  # Used for inverse scaling
+le_Description = joblib.load("le_Description.pkl")  # Used for inverse label encoding
 
 # Feature names as per the model input
 FEATURE_NAMES = [
@@ -28,23 +29,27 @@ def predict():
     try:
         input_data = request.form.to_dict()
         input_values = []
-        
+
         for feature in FEATURE_NAMES:
             if feature in input_data:
                 input_values.append(float(input_data[feature]))  # Convert to float
             else:
-                return "Error: Missing feature {} in input".format(feature), 400
+                return f"Error: Missing feature {feature} in input", 400
         
         # Convert to NumPy array and reshape
         final_features = np.array([input_values])
-        
+
         # Make prediction
-        prediction = model.predict(final_features)
-        
-        # Format output
-        output = prediction[0].tolist()  # Convert NumPy array to list
-        return render_template('home.html', prediction_text="Predicted Description: {}".format(output))
-    
+        predicted_value = model.predict(final_features)
+
+        # (i) Apply inverse scaling to get an integer
+        predicted_integer = int(np.round(scaler_Y.inverse_transform(predicted_value)[0][0]))
+
+        # (ii) Convert integer to label (inverse label encoding)
+        predicted_description = le_Description.inverse_transform([predicted_integer])[0]
+
+        return render_template('home.html', prediction_text=f"Predicted Description: {predicted_description}")
+
     except Exception as e:
         return str(e), 500
 
@@ -52,19 +57,25 @@ def predict():
 def predict_api():
     try:
         data = request.get_json(force=True)
-        
+
         input_values = []
         for feature in FEATURE_NAMES:
             if feature in data:
                 input_values.append(float(data[feature]))
             else:
-                return jsonify({"error": "Missing feature: {}".format(feature)}), 400
-        
+                return jsonify({"error": f"Missing feature: {feature}"}), 400
+
         final_features = np.array([input_values])
-        prediction = model.predict(final_features)
-        output = prediction[0].tolist()
-        
-        return jsonify({"predicted_description": output})
+        predicted_value = model.predict(final_features)
+
+        # (i) Apply inverse scaling
+        predicted_integer = int(np.round(scaler_Y.inverse_transform(predicted_value)[0][0]))
+
+        # (ii) Convert integer to label (inverse label encoding)
+        predicted_description = le_Description.inverse_transform([predicted_integer])[0]
+
+        return jsonify({"predicted_description": predicted_description})
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
