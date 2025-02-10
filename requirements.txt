@@ -1,6 +1,7 @@
 pip>=23.0
 setuptools>=65.0
 wheel
+numpy
 certifi==2019.11.28
 Click==7.0
 Flask==1.1.1
